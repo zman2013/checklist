@@ -6,6 +6,7 @@ import '../../models/pack_models.dart';
 import '../../widgets/compact_navigation_bar.dart';
 import '../../widgets/create_trip_dialog.dart';
 import '../../widgets/page_frame.dart';
+import '../../widgets/template_summary_row.dart';
 import '../templates/template_editor_page.dart';
 import '../templates/template_list_page.dart';
 import '../trips/trip_page.dart';
@@ -48,7 +49,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Pack',
+          '检查清单',
           style: TextStyle(
             fontWeight: FontWeight.w800,
             fontSize: compact ? 26 : 30,
@@ -90,10 +91,10 @@ class _HomePageState extends State<HomePage> {
                     if (_dashboard.activeTrips.isNotEmpty) ...[
                       const _SectionHeader(
                         title: '进行中的行程',
-                        subtitle: '随时回到上一次的打包进度',
+                        subtitle: '继续上一次的进度，不用重新翻找。',
                       ),
                       const SizedBox(height: 12),
-                      ..._dashboard.activeTrips.map(_buildActiveTripCard),
+                      ..._dashboard.activeTrips.map(_buildActiveTripRow),
                       const SizedBox(height: 28),
                     ],
                     Row(
@@ -102,7 +103,7 @@ class _HomePageState extends State<HomePage> {
                         const Expanded(
                           child: _SectionHeader(
                             title: '常用模板',
-                            subtitle: '先把 macOS 样板流程跑通，iOS / Android 共享同一套业务代码',
+                            subtitle: '每个模板一条横向信息栏，直接看清用途和条目规模。',
                           ),
                         ),
                         if (!compact) ...[
@@ -116,46 +117,30 @@ class _HomePageState extends State<HomePage> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final width = constraints.maxWidth;
-                        if (_dashboard.templates.isEmpty) {
-                          return Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(20),
-                              child: Text(
-                                '当前还没有模板，先创建一个 macOS 样板模板，再逐步扩到 iOS 和 Android。',
-                                style: Theme.of(context).textTheme.bodyMedium,
-                              ),
-                            ),
-                          );
-                        }
-                        final crossAxisCount = width >= 960
-                            ? 3
-                            : width >= 620
-                                ? 2
-                                : 1;
-                        return GridView.builder(
-                          itemCount: _dashboard.templates.length,
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: crossAxisCount,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: width >= 620 ? 1.42 : 1.18,
+                    if (_dashboard.templates.isEmpty)
+                      Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            '当前还没有模板，先创建一个 macOS 样板模板，再逐步扩到 iOS 和 Android。',
+                            style: Theme.of(context).textTheme.bodyMedium,
                           ),
-                          itemBuilder: (context, index) {
-                            final template = _dashboard.templates[index];
-                            return _TemplateCard(
-                              template: template,
-                              onTap: () => _startTrip(template),
-                            );
-                          },
-                        );
-                      },
-                    ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children: _dashboard.templates
+                            .map(
+                              (template) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: TemplateSummaryRow(
+                                  template: template,
+                                  onTap: () => _startTrip(template),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                      ),
                   ],
                 ),
               ),
@@ -163,7 +148,10 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildActiveTripCard(ActiveTripSummary trip) {
+  Widget _buildActiveTripRow(ActiveTripSummary trip) {
+    final colors = Theme.of(context).colorScheme;
+    final percent = (trip.progress * 100).round();
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Card(
@@ -171,34 +159,70 @@ class _HomePageState extends State<HomePage> {
           borderRadius: BorderRadius.circular(24),
           onTap: () => _openTrip(trip.id),
           child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
+                Container(
+                  width: 44,
+                  height: 44,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.luggage_rounded),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
                         trip.title,
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ),
-                    const Icon(Icons.arrow_outward_rounded),
-                  ],
+                      const SizedBox(height: 4),
+                      Text(
+                        '已完成 ${trip.checkedCount}/${trip.totalCount} · $percent%',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        trip.destination == null || trip.destination!.isEmpty
+                            ? '继续完善这个行程的打包进度。'
+                            : '目的地：${trip.destination}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 10),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: trip.progress,
+                          minHeight: 8,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  '已完成 ${trip.checkedCount} / ${trip.totalCount}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                LinearProgressIndicator(
-                  value: trip.progress,
-                  borderRadius: BorderRadius.circular(999),
-                  minHeight: 10,
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: colors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: Icon(
+                    Icons.arrow_outward_rounded,
+                    color: colors.primary,
+                    size: 18,
+                  ),
                 ),
               ],
             ),
@@ -304,47 +328,6 @@ class _SectionHeader extends StatelessWidget {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
       ],
-    );
-  }
-}
-
-class _TemplateCard extends StatelessWidget {
-  const _TemplateCard({
-    required this.template,
-    required this.onTap,
-  });
-
-  final TemplateSummary template;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(template.icon, style: const TextStyle(fontSize: 34)),
-              const Spacer(),
-              Text(
-                template.name,
-                style: const TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                template.useCount == 0 ? '尚未使用' : '已使用 ${template.useCount} 次',
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

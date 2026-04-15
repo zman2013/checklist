@@ -5,6 +5,7 @@ import '../../database/pack_repository.dart';
 import '../../models/pack_models.dart';
 import '../../widgets/compact_navigation_bar.dart';
 import '../../widgets/page_frame.dart';
+import '../../widgets/template_summary_row.dart';
 import 'template_editor_page.dart';
 
 class TemplateListPage extends StatefulWidget {
@@ -78,32 +79,18 @@ class _TemplateListPageState extends State<TemplateListPage> {
                         ),
                       )
                     else
-                      Card(
-                        child: Column(
-                          children: _templates
-                              .map(
-                                (template) => ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 20,
-                                    vertical: 8,
-                                  ),
-                                  leading: Text(
-                                    template.icon,
-                                    style: const TextStyle(fontSize: 28),
-                                  ),
-                                  title: Text(template.name),
-                                  subtitle: Text(
-                                    template.useCount == 0
-                                        ? '未使用'
-                                        : '已使用 ${template.useCount} 次',
-                                  ),
-                                  trailing:
-                                      const Icon(Icons.chevron_right_rounded),
+                      Column(
+                        children: _templates
+                            .map(
+                              (template) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: TemplateSummaryRow(
+                                  template: template,
                                   onTap: () => _openEditor(template.id),
                                 ),
-                              )
-                              .toList(),
-                        ),
+                              ),
+                            )
+                            .toList(),
                       ),
                     if (!compact) ...[
                       const SizedBox(height: 16),

@@ -47,23 +47,7 @@ class PackRepository {
   DashboardData loadDashboard() {
     _requireReady();
 
-    final templateRows = _db.select(
-      '''
-      SELECT id, name, icon, use_count
-      FROM trip_templates
-      ORDER BY use_count DESC, id ASC
-      ''',
-    );
-    final templates = templateRows
-        .map(
-          (row) => TemplateSummary(
-            id: _asInt(row['id']),
-            name: _asString(row['name']),
-            icon: _asString(row['icon']),
-            useCount: _asInt(row['use_count']),
-          ),
-        )
-        .toList();
+    final templates = _loadTemplateSummaries();
 
     final activeRows = _db.select(
       '''
@@ -99,14 +83,52 @@ class PackRepository {
 
   List<TemplateSummary> loadTemplates() {
     _requireReady();
+    return _loadTemplateSummaries();
+  }
 
+  List<TemplateSummary> _loadTemplateSummaries() {
     final rows = _db.select(
       '''
-      SELECT id, name, icon, use_count
-      FROM trip_templates
-      ORDER BY use_count DESC, id ASC
+      SELECT
+        tt.id,
+        tt.name,
+        tt.icon,
+        tt.use_count,
+        (
+          SELECT COUNT(*)
+          FROM template_items ti
+          WHERE ti.template_id = tt.id
+        ) AS item_count,
+        (
+          SELECT COUNT(DISTINCT ti.category)
+          FROM template_items ti
+          WHERE ti.template_id = tt.id
+        ) AS category_count,
+        (
+          SELECT group_concat(category, '\n')
+          FROM (
+            SELECT DISTINCT ti.category AS category
+            FROM template_items ti
+            WHERE ti.template_id = tt.id
+            ORDER BY ti.category
+            LIMIT 3
+          )
+        ) AS preview_categories,
+        (
+          SELECT group_concat(text, '\n')
+          FROM (
+            SELECT ti.text AS text
+            FROM template_items ti
+            WHERE ti.template_id = tt.id
+            ORDER BY ti.category, ti.sort_order, ti.id
+            LIMIT 3
+          )
+        ) AS preview_items
+      FROM trip_templates tt
+      ORDER BY tt.use_count DESC, tt.id ASC
       ''',
     );
+
     return rows
         .map(
           (row) => TemplateSummary(
@@ -114,6 +136,10 @@ class PackRepository {
             name: _asString(row['name']),
             icon: _asString(row['icon']),
             useCount: _asInt(row['use_count']),
+            itemCount: _asInt(row['item_count']),
+            categoryCount: _asInt(row['category_count']),
+            previewItems: _splitPreview(row['preview_items']),
+            previewCategories: _splitPreview(row['preview_categories']),
           ),
         )
         .toList();
@@ -670,6 +696,16 @@ class PackRepository {
   String _normalizeIcon(String icon) {
     final value = icon.trim();
     return value.isEmpty ? '🧳' : value;
+  }
+
+  List<String> _splitPreview(Object? value) {
+    final text = _asNullableString(value);
+    if (text == null || text.isEmpty) return const <String>[];
+    return text
+        .split('\n')
+        .map((entry) => entry.trim())
+        .where((entry) => entry.isNotEmpty)
+        .toList();
   }
 
   int _asInt(Object? value) {

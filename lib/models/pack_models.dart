@@ -19,12 +19,22 @@ class TemplateSummary {
     required this.name,
     required this.icon,
     required this.useCount,
+    required this.itemCount,
+    required this.categoryCount,
+    required this.previewItems,
+    required this.previewCategories,
   });
 
   final int id;
   final String name;
   final String icon;
   final int useCount;
+  final int itemCount;
+  final int categoryCount;
+  final List<String> previewItems;
+  final List<String> previewCategories;
+
+  String get usageLabel => useCount == 0 ? '尚未使用' : '已使用 $useCount 次';
 }
 
 class ActiveTripSummary {
