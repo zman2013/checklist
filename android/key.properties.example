@@ -1,0 +1,4 @@
+storeFile=keystores/pack-release.jks
+storePassword=your-store-password
+keyAlias=pack
+keyPassword=your-key-password

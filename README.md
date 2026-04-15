@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pack
 
-## Getting Started
+Pack 已开始从 Web 版迁移为 Flutter 多平台应用，目标平台为 `macOS / iOS / Android`。这一版先以 macOS 作为样板，把模板管理、行程创建、清单勾选和复盘学习四条主流程迁到共享 Flutter 代码中。
 
-First, run the development server:
+## 当前状态
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- `lib/` 是新的 Flutter 业务入口，按 `common / models / database / features / widgets` 分层。
+- `android/`、`ios/`、`macos/` 已补齐平台工程骨架。
+- 本地存储改为 Flutter 侧 SQLite，默认仍会预置商务出行、度假、周末短途、徒步四个模板。
+- 旧版 Next.js 代码仍保留在 `src/`，便于继续对照迁移，不作为主入口继续扩展。
+
+## 参考架构
+
+迁移时参考了 `/Users/manzhiyuan/workspaces/github/FlClash-new` 的组织方式：
+
+- 共享业务代码集中在 `lib/`
+- 平台差异收敛在 `android/`、`ios/`、`macos/`
+- 数据层与页面层解耦，先把 macOS 跑通，再把同一套共享逻辑落到移动端
+
+## 目录
+
+```text
+lib/
+├── application.dart
+├── common/
+├── database/
+├── features/
+├── models/
+└── widgets/
+
+android/
+ios/
+macos/
+src/   # 旧版 Next.js 实现，当前保留作迁移参考
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 运行
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+先安装 Flutter SDK，然后在项目根目录执行：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+flutter pub get
+flutter run -d macos
+```
 
-## Learn More
+后续移动端可继续使用同一套共享代码：
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+flutter run -d ios
+flutter run -d android
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Android Release
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Android 已接入 `android/key.properties` 签名配置。建议把正式 keystore 放在 `android/keystores/` 下，并在本机创建 `android/key.properties`：
 
-## Deploy on Vercel
+```properties
+storeFile=keystores/pack-release.jks
+storePassword=your-store-password
+keyAlias=pack
+keyPassword=your-key-password
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+然后执行：
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+flutter build apk --release
+flutter build appbundle --release
+```
+
+如果本机没有 `android/key.properties`，Gradle 会回退到 debug 签名，仅用于本地验证，不适合正式分发。
+
+## 说明
+
+- 共享 Flutter 代码已经在 macOS 和 Android 上完成编译、运行与基础验证。
+- Android 图标、启动页和 release 签名接入已经落地，后续可以继续补正式 keystore、发布渠道配置和 Play Console 上架资料。

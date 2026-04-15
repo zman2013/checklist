@@ -15,6 +15,10 @@
 
 # production
 /build
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
 
 # misc
 .DS_Store
@@ -34,3 +38,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.gstack/
+.context/
+.generated-icons/
+data.db
+android/local.properties
+android/key.properties
+android/keystores/
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ephemeral/
+macos/Flutter/ephemeral/
