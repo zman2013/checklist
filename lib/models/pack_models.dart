@@ -160,4 +160,6 @@ class TripDetail {
       status == TripStatus.departed ||
       status == TripStatus.completed ||
       isComplete;
+
+  bool get canAdjustChecklist => status != TripStatus.completed;
 }

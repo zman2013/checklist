@@ -305,16 +305,35 @@ class PackRepository {
       tripId = _db.lastInsertRowId;
 
       final templateItems = _db.select(
-        'SELECT id FROM template_items WHERE template_id = ? ORDER BY category, sort_order, id',
+        '''
+        SELECT id, category, text, sort_order
+        FROM template_items
+        WHERE template_id = ?
+        ORDER BY category, sort_order, id
+        ''',
         [templateId],
       );
       for (final item in templateItems) {
         _db.execute(
           '''
-          INSERT INTO trip_items (trip_id, item_id, text, is_ad_hoc, checked_at)
-          VALUES (?, ?, NULL, 0, NULL)
+          INSERT INTO trip_items (
+            trip_id,
+            item_id,
+            category,
+            text,
+            sort_order,
+            is_ad_hoc,
+            checked_at
+          )
+          VALUES (?, ?, ?, ?, ?, 0, NULL)
           ''',
-          [tripId, _asInt(item['id'])],
+          [
+            tripId,
+            _asInt(item['id']),
+            _asString(item['category']),
+            _asString(item['text']),
+            _asInt(item['sort_order']),
+          ],
         );
       }
 
@@ -330,10 +349,18 @@ class PackRepository {
       for (final item in forgottenItems) {
         _db.execute(
           '''
-          INSERT INTO trip_items (trip_id, item_id, text, is_ad_hoc, checked_at)
-          VALUES (?, NULL, ?, 1, NULL)
+          INSERT INTO trip_items (
+            trip_id,
+            item_id,
+            category,
+            text,
+            sort_order,
+            is_ad_hoc,
+            checked_at
+          )
+          VALUES (?, NULL, '提醒', ?, ?, 1, NULL)
           ''',
-          [tripId, _asString(item['text'])],
+          [tripId, _asString(item['text']), _nextTripSortOrder(tripId, '提醒')],
         );
       }
 
@@ -373,14 +400,13 @@ class PackRepository {
       '''
       SELECT
         ti.id AS trip_item_id,
-        tmi.text AS text,
-        tmi.category AS category,
+        ti.text AS text,
+        ti.category AS category,
         ti.checked_at,
-        tmi.sort_order
+        ti.sort_order
       FROM trip_items ti
-      JOIN template_items tmi ON tmi.id = ti.item_id
       WHERE ti.trip_id = ? AND ti.is_ad_hoc = 0
-      ORDER BY tmi.category, tmi.sort_order, tmi.id
+      ORDER BY ti.category, ti.sort_order, ti.id
       ''',
       [tripId],
     );
@@ -457,6 +483,117 @@ class PackRepository {
       'UPDATE trip_items SET checked_at = ? WHERE id = ?',
       [checked ? DateTime.now().toIso8601String() : null, tripItemId],
     );
+  }
+
+  int addTripItem(int tripId, String category, String text) {
+    _requireReady();
+
+    final normalizedCategory = category.trim();
+    final normalizedText = text.trim();
+    if (normalizedCategory.isEmpty || normalizedText.isEmpty) {
+      throw PackRepositoryException('分组和条目都不能为空');
+    }
+
+    final tripRows = _db.select(
+      'SELECT id, status FROM trips WHERE id = ?',
+      [tripId],
+    );
+    if (tripRows.isEmpty) {
+      throw PackRepositoryException('行程不存在');
+    }
+    if (_asString(tripRows.first['status']) == 'completed') {
+      throw PackRepositoryException('已完成的行程不能再调整清单');
+    }
+
+    _db.execute(
+      '''
+      INSERT INTO trip_items (
+        trip_id,
+        item_id,
+        category,
+        text,
+        sort_order,
+        is_ad_hoc,
+        checked_at
+      )
+      VALUES (?, NULL, ?, ?, ?, 0, NULL)
+      ''',
+      [
+        tripId,
+        normalizedCategory,
+        normalizedText,
+        _nextTripSortOrder(tripId, normalizedCategory),
+      ],
+    );
+    return _db.lastInsertRowId;
+  }
+
+  void updateTripItem(
+    int tripItemId, {
+    required String category,
+    required String text,
+  }) {
+    _requireReady();
+
+    final normalizedCategory = category.trim();
+    final normalizedText = text.trim();
+    if (normalizedCategory.isEmpty || normalizedText.isEmpty) {
+      throw PackRepositoryException('分组和条目都不能为空');
+    }
+
+    final rows = _db.select(
+      '''
+      SELECT ti.trip_id, ti.category, ti.sort_order, t.status
+      FROM trip_items ti
+      JOIN trips t ON t.id = ti.trip_id
+      WHERE ti.id = ?
+      ''',
+      [tripItemId],
+    );
+    if (rows.isEmpty) {
+      throw PackRepositoryException('条目不存在');
+    }
+
+    final row = rows.first;
+    if (_asString(row['status']) == 'completed') {
+      throw PackRepositoryException('已完成的行程不能再调整清单');
+    }
+
+    final currentCategory = _asString(row['category']);
+    final sortOrder = currentCategory == normalizedCategory
+        ? _asInt(row['sort_order'])
+        : _nextTripSortOrder(_asInt(row['trip_id']), normalizedCategory);
+
+    _db.execute(
+      '''
+      UPDATE trip_items
+      SET category = ?, text = ?, sort_order = ?
+      WHERE id = ?
+      ''',
+      [normalizedCategory, normalizedText, sortOrder, tripItemId],
+    );
+  }
+
+  void deleteTripItem(int tripItemId) {
+    _requireReady();
+
+    final rows = _db.select(
+      '''
+      SELECT ti.id, t.status
+      FROM trip_items ti
+      JOIN trips t ON t.id = ti.trip_id
+      WHERE ti.id = ?
+      ''',
+      [tripItemId],
+    );
+    if (rows.isEmpty) {
+      throw PackRepositoryException('条目不存在');
+    }
+    if (_asString(rows.first['status']) == 'completed') {
+      throw PackRepositoryException('已完成的行程不能再调整清单');
+    }
+
+    _db.execute('DELETE FROM trip_items WHERE id = ?', [tripItemId]);
   }
 
   void departTrip(int tripId) {
@@ -570,7 +707,9 @@ class PackRepository {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
         item_id INTEGER REFERENCES template_items(id),
+        category TEXT,
         text TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0,
         is_ad_hoc INTEGER NOT NULL DEFAULT 0,
         checked_at TEXT
       );
@@ -583,6 +722,9 @@ class PackRepository {
         item_type TEXT NOT NULL DEFAULT 'forgotten'
       );
     ''');
+
+    _ensureTripItemSnapshotColumns();
+    _backfillTripItemSnapshots();
 
     final countRows =
         _db.select('SELECT COUNT(*) AS count FROM trip_templates');
@@ -696,6 +838,59 @@ class PackRepository {
   String _normalizeIcon(String icon) {
     final value = icon.trim();
     return value.isEmpty ? '🧳' : value;
+  }
+
+  void _ensureTripItemSnapshotColumns() {
+    final columns = _db.select('PRAGMA table_info(trip_items)');
+    final columnNames =
+        columns.map((column) => _asString(column['name'])).toSet();
+
+    if (!columnNames.contains('category')) {
+      _db.execute('ALTER TABLE trip_items ADD COLUMN category TEXT');
+    }
+    if (!columnNames.contains('sort_order')) {
+      _db.execute(
+        'ALTER TABLE trip_items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+  }
+
+  void _backfillTripItemSnapshots() {
+    _db.execute(
+      '''
+      UPDATE trip_items
+      SET
+        text = COALESCE(
+          text,
+          (SELECT template_items.text FROM template_items WHERE template_items.id = trip_items.item_id)
+        ),
+        category = COALESCE(
+          category,
+          (SELECT template_items.category FROM template_items WHERE template_items.id = trip_items.item_id)
+        ),
+        sort_order = CASE
+          WHEN sort_order != 0 THEN sort_order
+          ELSE COALESCE(
+            (SELECT template_items.sort_order FROM template_items WHERE template_items.id = trip_items.item_id),
+            0
+          )
+        END
+      WHERE item_id IS NOT NULL
+      ''',
+    );
+  }
+
+  int _nextTripSortOrder(int tripId, String category) {
+    final rows = _db.select(
+      '''
+      SELECT MAX(sort_order) AS max_order
+      FROM trip_items
+      WHERE trip_id = ? AND category = ? AND is_ad_hoc = 0
+      ''',
+      [tripId, category],
+    );
+    final maxOrder = rows.first['max_order'];
+    return maxOrder == null ? 0 : _asInt(maxOrder) + 1;
   }
 
   List<String> _splitPreview(Object? value) {

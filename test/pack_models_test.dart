@@ -35,6 +35,24 @@ void main() {
     expect(detail.title, '🥾 徒步');
     expect(detail.isComplete, isTrue);
     expect(detail.isReadyForDebrief, isTrue);
+    expect(detail.canAdjustChecklist, isTrue);
+  });
+
+  test('completed trip detail can no longer adjust checklist', () {
+    const detail = TripDetail(
+      id: 2,
+      templateId: 11,
+      templateName: '商务出行',
+      templateIcon: '💼',
+      destination: '上海',
+      status: TripStatus.completed,
+      groups: <TripCategoryGroup>[],
+      reminderItems: <TripChecklistItem>[],
+      totalCount: 3,
+      checkedCount: 3,
+    );
+
+    expect(detail.canAdjustChecklist, isFalse);
   });
 
   test('db status parser falls back to packing', () {

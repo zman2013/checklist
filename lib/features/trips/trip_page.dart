@@ -19,6 +19,7 @@ class _TripPageState extends State<TripPage> {
   final _repository = PackRepository.instance;
   TripDetail? _detail;
   bool _loading = true;
+  bool _editingChecklist = false;
   final Set<int> _updatingIds = <int>{};
 
   @override
@@ -34,6 +35,23 @@ class _TripPageState extends State<TripPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_detail?.title ?? '行程'),
+        actions: [
+          if (!_loading && _detail != null && _detail!.canAdjustChecklist)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _editingChecklist = !_editingChecklist;
+                });
+              },
+              child: Text(_editingChecklist ? '完成调整' : '调整清单'),
+            ),
+          if (!_loading && _detail != null && _editingChecklist)
+            IconButton(
+              onPressed: _showAddItemSheet,
+              tooltip: '新增条目',
+              icon: const Icon(Icons.add_rounded),
+            ),
+        ],
       ),
       bottomNavigationBar:
           !_loading && _detail != null && _detail!.isReadyForDebrief && compact
@@ -51,8 +69,14 @@ class _TripPageState extends State<TripPage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 children: [
                   _buildProgressCard(),
+                  if (_editingChecklist) ...[
+                    const SizedBox(height: 16),
+                    _buildEditingHintCard(),
+                  ],
                   const SizedBox(height: 16),
                   if (_detail!.reminderItems.isNotEmpty) ...[
                     _buildReminderCard(),
@@ -151,6 +175,43 @@ class _TripPageState extends State<TripPage> {
     );
   }
 
+  Widget _buildEditingHintCard() {
+    return Card(
+      color: const Color(0xFFF5F1E8),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.edit_note_rounded),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '调整清单中',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '直接在当前行程里补条目、删条目，不用跳回模板。这里的改动先只作用于本次行程。',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 14),
+            OutlinedButton.icon(
+              onPressed: _showAddItemSheet,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('新增条目'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCategoryCard(TripCategoryGroup group) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -160,26 +221,84 @@ class _TripPageState extends State<TripPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                group.category,
-                style:
-                    const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      group.category,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (_editingChecklist)
+                    TextButton.icon(
+                      onPressed: () =>
+                          _showAddItemSheet(category: group.category),
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('添加'),
+                    ),
+                ],
               ),
               const SizedBox(height: 8),
               ...group.items.map(
-                (item) => CheckboxListTile(
-                  value: item.checked,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text(item.text),
-                  onChanged: _updatingIds.contains(item.id)
-                      ? null
-                      : (value) => _toggleItem(item.id, value ?? false),
-                ),
+                (item) => _buildTripItemRow(item, category: group.category),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildTripItemRow(TripChecklistItem item, {required String category}) {
+    final disabled = _updatingIds.contains(item.id);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Checkbox(
+            value: item.checked,
+            onChanged: disabled
+                ? null
+                : (value) => _toggleItem(item.id, value ?? false),
+          ),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: _editingChecklist && !disabled
+                  ? () => _showEditItemSheet(item, category: category)
+                  : null,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+                child: Text(
+                  item.text,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
+            ),
+          ),
+          if (_editingChecklist)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  onPressed: disabled
+                      ? null
+                      : () => _showEditItemSheet(item, category: category),
+                  tooltip: '编辑条目',
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  onPressed: disabled ? null : () => _deleteTripItem(item),
+                  tooltip: '删除条目',
+                  icon: const Icon(Icons.delete_outline_rounded),
+                ),
+              ],
+            ),
+        ],
       ),
     );
   }
@@ -227,12 +346,164 @@ class _TripPageState extends State<TripPage> {
     }
   }
 
+  Future<void> _showAddItemSheet({String? category}) async {
+    final detail = _detail;
+    if (detail == null) return;
+
+    final result = await showModalBottomSheet<_TripItemDraft>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _TripItemEditorSheet(
+        title: '新增条目',
+        submitLabel: '加入本次行程',
+        initialCategory: category,
+        initialText: '',
+        categories: detail.groups.map((group) => group.category).toList(),
+      ),
+    );
+    if (result == null) return;
+
+    try {
+      _repository.addTripItem(widget.tripId, result.category, result.text);
+      await _reloadDetail();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已添加“${result.text}”')),
+      );
+    } on PackRepositoryException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    }
+  }
+
+  Future<void> _showEditItemSheet(
+    TripChecklistItem item, {
+    required String category,
+  }) async {
+    final detail = _detail;
+    if (detail == null) return;
+
+    final result = await showModalBottomSheet<_TripItemDraft>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => _TripItemEditorSheet(
+        title: '编辑条目',
+        submitLabel: '保存修改',
+        initialCategory: category,
+        initialText: item.text,
+        categories: detail.groups.map((group) => group.category).toList(),
+      ),
+    );
+    if (result == null) return;
+
+    final textChanged = result.text != item.text;
+    final categoryChanged = result.category != category;
+    if (!textChanged && !categoryChanged) return;
+
+    setState(() {
+      _updatingIds.add(item.id);
+    });
+    try {
+      _repository.updateTripItem(
+        item.id,
+        category: result.category,
+        text: result.text,
+      );
+      await _reloadDetail();
+      if (!mounted) return;
+      final message = categoryChanged && textChanged
+          ? '已更新“${item.text}”，并移到 ${result.category}'
+          : categoryChanged
+              ? '已将“${item.text}”移到 ${result.category}'
+              : '已更新“${result.text}”';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } on PackRepositoryException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingIds.remove(item.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteTripItem(TripChecklistItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除条目'),
+        content: Text('确认从本次行程移除“${item.text}”？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    setState(() {
+      _updatingIds.add(item.id);
+    });
+    try {
+      _repository.deleteTripItem(item.id);
+      await _reloadDetail();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已移除“${item.text}”')),
+      );
+    } on PackRepositoryException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingIds.remove(item.id);
+        });
+      }
+    }
+  }
+
+  Future<void> _reloadDetail() async {
+    var detail = _repository.loadTripDetail(widget.tripId);
+    if (detail.isComplete && detail.status == TripStatus.packing) {
+      _repository.departTrip(widget.tripId);
+      detail = _repository.loadTripDetail(widget.tripId);
+    }
+    if (!mounted) return;
+    setState(() {
+      _detail = detail;
+      if (!detail.canAdjustChecklist) {
+        _editingChecklist = false;
+      }
+    });
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
     });
     try {
-      _detail = _repository.loadTripDetail(widget.tripId);
+      final detail = _repository.loadTripDetail(widget.tripId);
+      _detail = detail;
+      if (!detail.canAdjustChecklist) {
+        _editingChecklist = false;
+      }
     } on PackRepositoryException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -247,5 +518,167 @@ class _TripPageState extends State<TripPage> {
         });
       }
     }
+  }
+}
+
+class _TripItemDraft {
+  const _TripItemDraft({
+    required this.category,
+    required this.text,
+  });
+
+  final String category;
+  final String text;
+}
+
+class _TripItemEditorSheet extends StatefulWidget {
+  const _TripItemEditorSheet({
+    required this.title,
+    required this.submitLabel,
+    required this.initialCategory,
+    required this.initialText,
+    required this.categories,
+  });
+
+  final String title;
+  final String submitLabel;
+  final String? initialCategory;
+  final String initialText;
+  final List<String> categories;
+
+  @override
+  State<_TripItemEditorSheet> createState() => _TripItemEditorSheetState();
+}
+
+class _TripItemEditorSheetState extends State<_TripItemEditorSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _categoryController;
+  late final TextEditingController _textController;
+
+  @override
+  void initState() {
+    super.initState();
+    _categoryController =
+        TextEditingController(text: widget.initialCategory ?? '');
+    _textController = TextEditingController(text: widget.initialText);
+  }
+
+  @override
+  void dispose() {
+    _categoryController.dispose();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final categorySuggestions = widget.categories
+        .where((category) => category.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        MediaQuery.of(context).viewInsets.bottom + 20,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.title,
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 16),
+            if (categorySuggestions.isNotEmpty) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final category in categorySuggestions)
+                    ActionChip(
+                      label: Text(category),
+                      onPressed: () {
+                        _categoryController.text = category;
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextFormField(
+              controller: _categoryController,
+              textInputAction: TextInputAction.next,
+              decoration: const InputDecoration(
+                labelText: '分组',
+                hintText: '例如：证件 / 洗漱 / 数码',
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return '请输入分组';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _textController,
+              autofocus: true,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: '条目名称',
+                hintText: '例如：身份证、充电器、睡衣',
+              ),
+              onFieldSubmitted: (_) => _submit(),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return '请输入条目名称';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _submit,
+                    icon: Icon(
+                      widget.initialText.isEmpty
+                          ? Icons.add_rounded
+                          : Icons.save_rounded,
+                    ),
+                    label: Text(widget.submitLabel),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.of(context).pop(
+      _TripItemDraft(
+        category: _categoryController.text.trim(),
+        text: _textController.text.trim(),
+      ),
+    );
   }
 }
