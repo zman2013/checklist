@@ -21,6 +21,7 @@ class _TripPageState extends State<TripPage> {
   bool _loading = true;
   bool _editingChecklist = false;
   final Set<int> _updatingIds = <int>{};
+  String? _hoveredCategory;
 
   @override
   void initState() {
@@ -132,9 +133,7 @@ class _TripPageState extends State<TripPage> {
             ),
             const SizedBox(height: 12),
             Text(
-              detail.isComplete
-                  ? '所有条目已勾选，可以直接进入复盘。'
-                  : '把 macOS 样板流程先跑顺，移动端会复用同一套逻辑。',
+              detail.isComplete ? '所有条目已勾选，可以直接进入复盘。' : '继续逐项确认，完成后就可以结束这次行程。',
             ),
           ],
         ),
@@ -213,94 +212,256 @@ class _TripPageState extends State<TripPage> {
   }
 
   Widget _buildCategoryCard(TripCategoryGroup group) {
+    final isHovering = _editingChecklist && _hoveredCategory == group.category;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+      child: DragTarget<_DraggedTripItem>(
+        onWillAcceptWithDetails: (details) {
+          if (!_editingChecklist) return false;
+          final data = details.data;
+          return data.category != group.category &&
+              !_updatingIds.contains(data.item.id);
+        },
+        onMove: (details) {
+          if (_hoveredCategory != group.category) {
+            setState(() {
+              _hoveredCategory = group.category;
+            });
+          }
+        },
+        onLeave: (_) {
+          if (_hoveredCategory == group.category) {
+            setState(() {
+              _hoveredCategory = null;
+            });
+          }
+        },
+        onAcceptWithDetails: (details) {
+          setState(() {
+            _hoveredCategory = null;
+          });
+          _moveTripItemToCategory(
+            details.data.item,
+            targetCategory: group.category,
+          );
+        },
+        builder: (context, candidateData, rejectedData) {
+          final showDropState = isHovering || candidateData.isNotEmpty;
+          return Card(
+            color: showDropState
+                ? Theme.of(context).colorScheme.primaryContainer.withValues(
+                      alpha: 0.35,
+                    )
+                : null,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+              side: BorderSide(
+                color: showDropState
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.transparent,
+                width: showDropState ? 1.5 : 1,
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      group.category,
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          group.category,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                    ),
+                      if (_editingChecklist)
+                        TextButton.icon(
+                          onPressed: () =>
+                              _showAddItemSheet(category: group.category),
+                          icon: const Icon(Icons.add_rounded),
+                          label: Text(showDropState ? '放到这里' : '添加'),
+                        ),
+                    ],
                   ),
-                  if (_editingChecklist)
-                    TextButton.icon(
-                      onPressed: () =>
-                          _showAddItemSheet(category: group.category),
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('添加'),
+                  if (showDropState) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      '松手后会移动到这个分组末尾',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
+                  ],
+                  const SizedBox(height: 8),
+                  ...group.items.map(
+                    (item) => _buildTripItemRow(item, category: group.category),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              ...group.items.map(
-                (item) => _buildTripItemRow(item, category: group.category),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
   Widget _buildTripItemRow(TripChecklistItem item, {required String category}) {
     final disabled = _updatingIds.contains(item.id);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
-        children: [
-          Checkbox(
-            value: item.checked,
-            onChanged: disabled
-                ? null
-                : (value) => _toggleItem(item.id, value ?? false),
-          ),
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: _editingChecklist && !disabled
-                  ? () => _showEditItemSheet(item, category: category)
-                  : null,
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                child: Text(
-                  item.text,
-                  style: Theme.of(context).textTheme.bodyLarge,
-                ),
+    final row = Row(
+      children: [
+        Checkbox(
+          value: item.checked,
+          onChanged:
+              disabled ? null : (value) => _toggleItem(item.id, value ?? false),
+        ),
+        Expanded(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _editingChecklist && !disabled
+                ? () => _showEditItemSheet(item, category: category)
+                : null,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+              child: Text(
+                item.text,
+                style: Theme.of(context).textTheme.bodyLarge,
               ),
             ),
           ),
-          if (_editingChecklist)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  onPressed: disabled
-                      ? null
-                      : () => _showEditItemSheet(item, category: category),
-                  tooltip: '编辑条目',
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-                IconButton(
-                  onPressed: disabled ? null : () => _deleteTripItem(item),
-                  tooltip: '删除条目',
-                  icon: const Icon(Icons.delete_outline_rounded),
-                ),
-              ],
-            ),
-        ],
-      ),
+        ),
+        if (_editingChecklist)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(right: 4),
+                child: Icon(Icons.drag_indicator_rounded, size: 18),
+              ),
+              IconButton(
+                onPressed: disabled
+                    ? null
+                    : () => _showEditItemSheet(item, category: category),
+                tooltip: '编辑条目',
+                icon: const Icon(Icons.edit_outlined),
+              ),
+              IconButton(
+                onPressed: disabled ? null : () => _deleteTripItem(item),
+                tooltip: '删除条目',
+                icon: const Icon(Icons.delete_outline_rounded),
+              ),
+            ],
+          ),
+      ],
     );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: _editingChecklist
+          ? LongPressDraggable<_DraggedTripItem>(
+              data: _DraggedTripItem(item: item, category: category),
+              dragAnchorStrategy: pointerDragAnchorStrategy,
+              onDragEnd: (_) {
+                if (mounted) {
+                  setState(() {
+                    _hoveredCategory = null;
+                  });
+                }
+              },
+              feedback: Material(
+                color: Colors.transparent,
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    boxShadow: const [
+                      BoxShadow(
+                        blurRadius: 18,
+                        offset: Offset(0, 8),
+                        color: Color(0x22000000),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.drag_indicator_rounded),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          item.text,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              childWhenDragging: Opacity(
+                opacity: 0.28,
+                child: IgnorePointer(child: row),
+              ),
+              child: row,
+            )
+          : row,
+    );
+  }
+
+  Future<void> _moveTripItemToCategory(
+    TripChecklistItem item, {
+    required String targetCategory,
+  }) async {
+    final detail = _detail;
+    if (detail == null) return;
+
+    TripCategoryGroup? sourceGroup;
+    for (final group in detail.groups) {
+      if (group.items.any((groupItem) => groupItem.id == item.id)) {
+        sourceGroup = group;
+        break;
+      }
+    }
+    if (sourceGroup == null || sourceGroup.category == targetCategory) {
+      return;
+    }
+
+    setState(() {
+      _updatingIds.add(item.id);
+    });
+    try {
+      _repository.updateTripItem(
+        item.id,
+        category: targetCategory,
+        text: item.text,
+      );
+      await _reloadDetail();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已将“${item.text}”移到 $targetCategory')),
+      );
+    } on PackRepositoryException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingIds.remove(item.id);
+          _hoveredCategory = null;
+        });
+      }
+    }
   }
 
   Future<void> _toggleItem(int itemId, bool checked) async {
@@ -519,6 +680,16 @@ class _TripPageState extends State<TripPage> {
       }
     }
   }
+}
+
+class _DraggedTripItem {
+  const _DraggedTripItem({
+    required this.item,
+    required this.category,
+  });
+
+  final TripChecklistItem item;
+  final String category;
 }
 
 class _TripItemDraft {

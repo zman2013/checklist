@@ -122,7 +122,7 @@ class _HomePageState extends State<HomePage> {
                         child: Padding(
                           padding: const EdgeInsets.all(20),
                           child: Text(
-                            '当前还没有模板，先创建一个 macOS 样板模板，再逐步扩到 iOS 和 Android。',
+                            '当前还没有模板，先创建一个模板开始整理清单。',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ),
@@ -212,6 +212,19 @@ class _HomePageState extends State<HomePage> {
                 ),
                 const SizedBox(width: 12),
                 Container(
+                  decoration: BoxDecoration(
+                    color: colors.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: colors.outlineVariant),
+                  ),
+                  child: IconButton(
+                    onPressed: () => _deleteTrip(trip),
+                    tooltip: '删除行程',
+                    icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: colors.surface,
@@ -257,6 +270,41 @@ class _HomePageState extends State<HomePage> {
     );
     if (mounted) {
       await _reload();
+    }
+  }
+
+  Future<void> _deleteTrip(ActiveTripSummary trip) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除进行中的行程'),
+        content: Text('确认删除“${trip.title}”？当前勾选进度会一并移除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      _repository.deleteTrip(trip.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已删除“${trip.title}”')),
+      );
+      await _reload();
+    } on PackRepositoryException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
     }
   }
 

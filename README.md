@@ -1,6 +1,6 @@
 # Pack
 
-Pack 已开始从 Web 版迁移为 Flutter 多平台应用，目标平台为 `macOS / iOS / Android`。这一版先以 macOS 作为样板，把模板管理、行程创建、清单勾选和复盘学习四条主流程迁到共享 Flutter 代码中。
+Pack 已开始从 Web 版迁移为 Flutter 多平台应用，目标平台为 `macOS / iOS / Android`。当前已经把模板管理、行程创建、清单勾选和复盘学习四条主流程迁到共享 Flutter 代码中。
 
 ## 当前状态
 
@@ -15,7 +15,7 @@ Pack 已开始从 Web 版迁移为 Flutter 多平台应用，目标平台为 `ma
 
 - 共享业务代码集中在 `lib/`
 - 平台差异收敛在 `android/`、`ios/`、`macos/`
-- 数据层与页面层解耦，先把 macOS 跑通，再把同一套共享逻辑落到移动端
+- 数据层与页面层解耦，共享业务逻辑由多平台工程复用
 
 ## 目录
 

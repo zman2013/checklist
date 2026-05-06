@@ -596,6 +596,20 @@ class PackRepository {
     _db.execute('DELETE FROM trip_items WHERE id = ?', [tripItemId]);
   }
 
+  void deleteTrip(int tripId) {
+    _requireReady();
+
+    final rows = _db.select(
+      'SELECT id FROM trips WHERE id = ?',
+      [tripId],
+    );
+    if (rows.isEmpty) {
+      throw PackRepositoryException('行程不存在');
+    }
+
+    _db.execute('DELETE FROM trips WHERE id = ?', [tripId]);
+  }
+
   void departTrip(int tripId) {
     _requireReady();
     _db.execute(

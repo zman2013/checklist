@@ -1,7 +1,7 @@
 name: pack
 description: Multi-platform packing checklist app for macOS, iOS, and Android.
 publish_to: 'none'
-version: 0.2.1+2
+version: 0.2.3+3
 
 environment:
   sdk: '>=3.4.0 <4.0.0'

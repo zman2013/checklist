@@ -73,7 +73,7 @@ class _TemplateListPageState extends State<TemplateListPage> {
                         child: Padding(
                           padding: const EdgeInsets.all(20),
                           child: Text(
-                            '还没有模板，先创建一个作为多平台样板。',
+                            '还没有模板，先创建一个开始整理清单。',
                             style: Theme.of(context).textTheme.bodyMedium,
                           ),
                         ),
